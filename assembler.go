@@ -323,8 +323,315 @@ func extractTextLabels(lines []InputLine, settings AssemblySettings, labels map[
 	return labels
 }
 
-func assembleText(lines []InputLine, settings AssemblySettings) *MemoryImage {
+func getRegFromString(s string, line InputLine) (int, bool) {
+	if len(s) == 0 {
+		assemblyReportError(line, "missing register, cannot omit registers")
+		return 0, false
+	}
 
+	if s[0] != '$' && s[0] != 't' {
+		assemblyReportError(line, "registers are marked with a preceding '$' or 't'")
+		return 0, false
+	}
+
+	v, e := strconv.Atoi(s[1:])
+	if e != nil {
+		assemblyReportError(line, "the specified register \""+s+"\" is not a valid numeric register")
+		return 0, false
+	}
+
+	if v < 0 || v > 31 {
+		assemblyReportError(line, "invalid register. Registers are between $0 and $31")
+		return 0, false
+	}
+
+	return v, true
+}
+
+func extractRTypeInfo(fields []string, line InputLine, num int) ([3]int, bool) {
+	if len(fields) != num {
+		//invalid format
+		if num == 3 {
+			assemblyReportError(line, "this register-type instruction must have 3 registers in the form \"opcode $1, $2, $3\"")
+		} else if num == 2 {
+			assemblyReportError(line, "this register-type instruction must have 2 registers in the form \"opcode $1, $2\"")
+		} else {
+			assemblyReportError(line, "this register-type instruction must have 1 register in the form \"opcode $1\"")
+		}
+		return [3]int{}, false
+	}
+
+	var ret [3]int
+	for i := 0; num > i; i++ {
+		if len(fields[i]) == 0 {
+			assemblyReportError(line, "missing register, cannot omit registers")
+			return ret, false
+		}
+
+		if fields[i][0] != '$' && fields[i][0] != 't' {
+			assemblyReportError(line, "registers are marked with a preceding '$' or 't'")
+			return ret, false
+		}
+
+		v, e := strconv.Atoi(fields[i][1:])
+		if e != nil {
+			assemblyReportError(line, "the specified register \""+fields[i]+"\" is not a valid numeric register")
+			return ret, false
+		}
+
+		if v < 0 || v > 31 {
+			assemblyReportError(line, "invalid register. Registers are between $0 and $31")
+			return ret, false
+		}
+
+		ret[i] = v
+	}
+
+	return ret, true
+}
+
+func extractStandardITypeInfo(fields []string, line InputLine, labels map[string]uint32) ([2]int, uint32, bool) {
+	if len(fields) != 3 {
+		//invalid format
+		assemblyReportError(line, "immediate-type instructions must have 2 registers and one immediate"+
+			" in the form \"opcode $1, $2, [value]\"")
+		return [2]int{}, 0, false
+	}
+
+	var ret [2]int
+	for i := 0; 2 > i; i++ {
+		v, ok := getRegFromString(fields[i], line)
+		if !ok {
+			return [2]int{}, 0, false
+		}
+
+		ret[i] = v
+	}
+
+	v, e := getLiteralValue(fields[2], labels)
+	if e != nil {
+		assemblyReportError(line, e.Error())
+		return ret, 0, false
+	}
+	if (v&0xFFFF0000) != 0xFFFF0000 && (v&0xFFFF0000) != 0x0 {
+		//overflow
+		assemblyReportError(line, "immediate value does not fit into 16 bits")
+		return ret, 0, false
+	}
+
+	return ret, v & 0xFFFF, true
+}
+
+func extractSpecialITypeInfo(fields []string, line InputLine, labels map[string]uint32) ([2]int, uint32, bool) {
+	//form is opcode $1, literal($2)
+
+	if len(fields) != 2 {
+		assemblyReportError(line, "invalid format. This instruction requires the format \"opcode $1, literal($2)\"")
+		return [2]int{}, 0, false
+	}
+
+	var ret [2]int
+
+	v, ok := getRegFromString(fields[0], line)
+	if !ok {
+		return ret, 0, false
+	}
+	ret[0] = v
+
+	//getting the second register in the parenthesis
+	if !strings.Contains(fields[1], "(") || !strings.Contains(fields[1], ")") {
+		assemblyReportError(line, "invalid format, missing parenthesis-wrapped register."+
+			" This instruction requires the format \"opcode $1, literal($2)\"")
+		return ret, 0, false
+	}
+
+	secondReg := fields[1][strings.Index(fields[1], "(")+1 : strings.Index(fields[1], ")")]
+	v, ok = getRegFromString(secondReg, line)
+	if !ok {
+		return ret, 0, false
+	}
+
+	//getting literal
+	literal := fields[1][:strings.Index(fields[1], "(")]
+	lv, e := getLiteralValue(literal, labels)
+	if e != nil {
+		assemblyReportError(line, e.Error())
+		return ret, 0, false
+	}
+	return ret, lv, true
+}
+
+func assembleText(lines []InputLine, settings AssemblySettings, labels map[string]uint32) *MemoryImage {
+	currentAddr := settings.TextStart
+	ret := new(MemoryImage)
+
+	for _, l := range lines {
+		noComment := l.Contents
+		if strings.Contains(noComment, "#") {
+			noComment = noComment[:strings.Index(noComment, "#")]
+		}
+		noLabel := noComment
+		if strings.Contains(noLabel, ":") {
+			noLabel = noLabel[strings.Index(noLabel, ":")+1:]
+		}
+		noLabel = strings.ToLower(strings.Trim(noLabel, " \t"))
+
+		if noLabel == "" {
+			continue
+		}
+
+		//obtaining comma separated fields and the op code
+		spaceFields := strings.Fields(noLabel)
+		opCode := spaceFields[0]
+		rest := strings.Join(spaceFields[1:], "")
+		fields := strings.Split(rest, ",")
+
+		var instruction uint32 = 0
+
+		switch opCode {
+		case "add":
+			regs, _ := extractRTypeInfo(fields, l, 3)
+			instruction = formRInstruction(opADD, regs[1], regs[2], regs[0], 0, fnADD)
+			break
+		case "addi":
+			regs, imm, _ := extractStandardITypeInfo(fields, l, labels)
+			instruction = formIInstruction(opADDI, regs[0], regs[1], imm)
+			break
+		case "addu":
+			regs, _ := extractRTypeInfo(fields, l, 3)
+			instruction = formRInstruction(opADDU, regs[1], regs[2], regs[0], 0, fnADDU)
+			break
+		case "addiu":
+			regs, imm, _ := extractStandardITypeInfo(fields, l, labels)
+			instruction = formIInstruction(opADDIU, regs[0], regs[1], imm)
+			break
+		case "and":
+			regs, _ := extractRTypeInfo(fields, l, 3)
+			instruction = formRInstruction(opAND, regs[1], regs[2], regs[0], 0, fnAND)
+			break
+		case "andi":
+			regs, imm, _ := extractStandardITypeInfo(fields, l, labels)
+			instruction = formIInstruction(opANDI, regs[0], regs[1], imm)
+			break
+		case "beq":
+			regs, imm, _ := extractStandardITypeInfo(fields, l, labels)
+			instruction = formIInstruction(opBEQ, regs[0], regs[1], imm)
+			break
+		case "bne":
+			regs, imm, _ := extractStandardITypeInfo(fields, l, labels)
+			instruction = formIInstruction(opBNE, regs[0], regs[1], imm)
+			break
+		case "div":
+			regs, _ := extractRTypeInfo(fields, l, 2)
+			instruction = formRInstruction(opDIV, regs[1], regs[2], regs[0], 0, fnDIV)
+			break
+		case "divu":
+			regs, _ := extractRTypeInfo(fields, l, 2)
+			instruction = formRInstruction(opDIVU, regs[1], regs[2], regs[0], 0, fnDIVU)
+			break
+		case "jr":
+			regs, _ := extractRTypeInfo(fields, l, 1)
+			instruction = formRInstruction(opJR, regs[2], regs[0], regs[1], 0, fnJR)
+			break
+		case "mfhi":
+			regs, _ := extractRTypeInfo(fields, l, 1)
+			instruction = formRInstruction(opMFHI, regs[0], regs[1], regs[2], 0, fnMFHI)
+			break
+		case "mflo":
+			regs, _ := extractRTypeInfo(fields, l, 1)
+			instruction = formRInstruction(opMFLO, regs[0], regs[1], regs[2], 0, fnMFLO)
+			break
+		case "mult":
+			regs, _ := extractRTypeInfo(fields, l, 2)
+			instruction = formRInstruction(opMULT, regs[1], regs[2], regs[0], 0, fnMULT)
+			break
+		case "multu":
+			regs, _ := extractRTypeInfo(fields, l, 2)
+			instruction = formRInstruction(opMULTU, regs[1], regs[2], regs[0], 0, fnMULTU)
+			break
+		case "xor":
+			regs, _ := extractRTypeInfo(fields, l, 3)
+			instruction = formRInstruction(opXOR, regs[1], regs[2], regs[0], 0, fnXOR)
+			break
+		case "or":
+			regs, _ := extractRTypeInfo(fields, l, 3)
+			instruction = formRInstruction(opOR, regs[1], regs[2], regs[0], 0, fnOR)
+			break
+		case "ori":
+			regs, imm, _ := extractStandardITypeInfo(fields, l, labels)
+			instruction = formIInstruction(opORI, regs[0], regs[1], imm)
+			break
+		case "slt":
+			regs, _ := extractRTypeInfo(fields, l, 3)
+			instruction = formRInstruction(opSLT, regs[1], regs[2], regs[0], 0, fnSLT)
+			break
+		case "slti":
+			regs, imm, _ := extractStandardITypeInfo(fields, l, labels)
+			instruction = formIInstruction(opSLTI, regs[0], regs[1], imm)
+			break
+		case "sltiu":
+			regs, imm, _ := extractStandardITypeInfo(fields, l, labels)
+			instruction = formIInstruction(opSLTIU, regs[0], regs[1], imm)
+			break
+		case "sltu":
+			regs, _ := extractRTypeInfo(fields, l, 3)
+			instruction = formRInstruction(opSLTU, regs[1], regs[2], regs[0], 0, fnSLTU)
+			break
+		case "sll":
+			regs, v, _ := extractStandardITypeInfo(fields, l, labels)
+			if v > 31 {
+				//invalid shift amount
+				assemblyReportError(l, "cannot shift by more than 31 bits and cannot be a negative number")
+				v = v & 0x1F //just to make it keep going
+			}
+			instruction = formRInstruction(opSLL, regs[1], 0, regs[0], int(v), fnSLL)
+			break
+		case "srl":
+			regs, v, _ := extractStandardITypeInfo(fields, l, labels)
+			if v > 31 {
+				//invalid shift amount
+				assemblyReportError(l, "cannot shift by more than 31 bits and cannot be a negative number")
+				v = v & 0x1F //just to make it keep going
+			}
+			instruction = formRInstruction(opSRL, regs[1], 0, regs[0], int(v), fnSRL)
+			break
+		case "sra":
+			regs, v, _ := extractStandardITypeInfo(fields, l, labels)
+			if v > 31 {
+				//invalid shift amount
+				assemblyReportError(l, "cannot shift by more than 31 bits and cannot be a negative number")
+				v = v & 0x1F //just to make it keep going
+			}
+			instruction = formRInstruction(opSRA, regs[1], 0, regs[0], int(v), fnSRA)
+			break
+		case "sllv":
+			regs, _ := extractRTypeInfo(fields, l, 3)
+			instruction = formRInstruction(opSLL, regs[1], regs[2], regs[0], 0, fnSLLV)
+			break
+		case "srlv":
+			regs, _ := extractRTypeInfo(fields, l, 3)
+			instruction = formRInstruction(opSRL, regs[1], regs[2], regs[0], 0, fnSRLV)
+			break
+		case "srav":
+			regs, _ := extractRTypeInfo(fields, l, 3)
+			instruction = formRInstruction(opSRA, regs[1], regs[2], regs[0], 0, fnSRAV)
+			break
+		case "sub":
+			regs, _ := extractRTypeInfo(fields, l, 3)
+			instruction = formRInstruction(opSUB, regs[1], regs[2], regs[0], 0, fnSUB)
+			break
+		case "subu":
+			regs, _ := extractRTypeInfo(fields, l, 3)
+			instruction = formRInstruction(opSUBU, regs[1], regs[2], regs[0], 0, fnSUBU)
+			break
+		}
+
+		insertMemoryValue(currentAddr, instruction, ret)
+
+		currentAddr += 4
+	}
+
+	return ret
 }
 
 func assemble(file string, settings AssemblySettings) (*MemoryImage, map[uint32]InputLine) {
