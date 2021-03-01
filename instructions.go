@@ -75,3 +75,29 @@ func formIInstruction(opCode, rs, rt int, imm uint32) uint32 {
 func formJInstruction(opCode int, addr uint32) uint32 {
 	return (uint32(opCode) << 26) | addr
 }
+
+func decodeInstruction(instr uint32) (op, x, y, z int, imm uint32, fn int) {
+	//last 6 bits are the op code and determine how to read the rest of the instruction
+	op = int(instr >> 26)
+	if op == 0x0 {
+		//R-type instruction where order is: op, rs, rt, rd, shift, fn
+		//rd is z, rs is x, rt is y
+		x = int((instr >> 21) & 0x1F)
+		y = int((instr >> 16) & 0x1F)
+		z = int((instr >> 11) & 0x1F)
+		imm = (instr >> 6) & 0x1F //doubles as shift amount
+		fn = int(instr & 0x3F)
+		return
+	} else if op == opJ || op == opJAL {
+		//J-type instruction where the order is op, addr
+		imm = instr & 0x03FFFFFF
+		return
+	} else {
+		//I-type instruction where order is: op, rs, rt, immediate
+		//rs is z, rt is x
+		x = int((instr >> 16) & 0x1F)
+		z = int((instr >> 21) & 0x1F)
+		imm = instr & 0xFFFF
+		return
+	}
+}

@@ -45,14 +45,14 @@ func insertMemoryValue(addr, value uint32, mem *MemoryImage) {
 	//assuming value has already been masked
 
 	for addr >= mem.startingAddr+uint32(len(mem.memory))*4 {
-		//expanding memory
+		//expanding memory, assuming memory is contiguous for the assembler
 		mem.memory = append(mem.memory, 0)
 	}
 
 	//inserting the value
-	prev := mem.memory[addr/4]
+	prev := mem.memory[(addr-mem.startingAddr)/4]
 	prev = prev | (value << ((addr % 4) * 8))
-	mem.memory[addr/4] = prev
+	mem.memory[(addr-mem.startingAddr)/4] = prev
 }
 
 func getLiteralValue(s string, labels map[string]uint32) (uint32, error) {
@@ -75,7 +75,7 @@ func getLiteralValue(s string, labels map[string]uint32) (uint32, error) {
 				if c <= '9' && c >= '0' {
 					ret = (ret << 4) | uint32(c-'0')
 				} else if c <= 'f' && c >= 'a' {
-					ret = (ret << 4) | uint32(c-'a')
+					ret = (ret << 4) | (uint32(c-'a') + 10)
 				} else {
 					//invalid character in a hex number
 					return 0, fmt.Errorf("\"%s\" is not a valid hexadecimal number", s)
@@ -172,7 +172,15 @@ func assembleData(lines []InputLine, settings AssemblySettings) (*MemoryImage, m
 			continue
 		}
 
-		switch fields[1] {
+		if fields[0][len(fields[0])-1] != ':' {
+			//no colon following a label declaration
+			assemblyReportError(l, "data allocation labels need to be followed by a colon. Expected "+
+				"\"LabelName: .dataType value\". Got: \""+line+"\"")
+		}
+
+		fields[0] = strings.Trim(fields[0], ": \t")
+
+		switch strings.ToLower(fields[1]) {
 		case ".byte":
 			//merging all other fields together to prepare for comma delimited list
 			dataMerged := strings.Join(fields[2:], "")
@@ -252,6 +260,8 @@ func assembleData(lines []InputLine, settings AssemblySettings) (*MemoryImage, m
 				insertMemoryValue(currentAddr, 0, retMem)
 			}
 
+			currentAddr -= 1 //a lazy way of accounting for the one extra time it increments currentAddr
+
 			break
 		case ".alloc":
 			currentAddr = (currentAddr + 4) & 0xFFFFFFFC //accounts for byte alignment
@@ -270,6 +280,8 @@ func assembleData(lines []InputLine, settings AssemblySettings) (*MemoryImage, m
 			for endAddr := currentAddr + v*4; endAddr > currentAddr; currentAddr += 4 {
 				insertMemoryValue(currentAddr, 0, retMem)
 			}
+
+			currentAddr -= 4 //a lazy way of accounting for the one extra time it increments currentAddr
 
 			break
 		default:
@@ -296,13 +308,9 @@ func extractTextLabels(lines []InputLine, settings AssemblySettings, labels map[
 		}
 		noLabel = strings.Trim(noLabel, " \t")
 
-		if noLabel != "" {
-			currentAddr += 4
-		} else {
-			if strings.Contains(noComment, ":") {
-				//label on an empty line, not allowed
-				assemblyReportError(l, "cannot declare labels on lines without assembly operations")
-			}
+		if noLabel == "" && strings.Contains(noComment, ":") {
+			//label on an empty line, not allowed
+			assemblyReportError(l, "cannot declare labels on lines without assembly operations")
 		}
 
 		if strings.Contains(noComment, ":") {
@@ -318,6 +326,11 @@ func extractTextLabels(lines []InputLine, settings AssemblySettings, labels map[
 			//even if the error is thrown, the label is to the last one because the program will never be run
 			labels[labelName] = currentAddr
 		}
+
+		if noLabel != "" {
+			currentAddr += 4
+		}
+
 	}
 
 	return labels
@@ -390,7 +403,7 @@ func extractRTypeInfo(fields []string, line InputLine, num int) ([3]int, bool) {
 	return ret, true
 }
 
-func extractStandardITypeInfo(fields []string, line InputLine, labels map[string]uint32) ([2]int, uint32, bool) {
+func extractStandardITypeInfo(fields []string, line InputLine, labels map[string]uint32, maxMask uint32) ([2]int, uint32, bool) {
 	if len(fields) != 3 {
 		//invalid format
 		assemblyReportError(line, "immediate-type instructions must have 2 registers and one immediate"+
@@ -413,7 +426,7 @@ func extractStandardITypeInfo(fields []string, line InputLine, labels map[string
 		assemblyReportError(line, e.Error())
 		return ret, 0, false
 	}
-	if (v&0xFFFF0000) != 0xFFFF0000 && (v&0xFFFF0000) != 0x0 {
+	if (v&maxMask) != maxMask && (v&maxMask) != 0x0 {
 		//overflow
 		assemblyReportError(line, "immediate value does not fit into 16 bits")
 		return ret, 0, false
@@ -451,6 +464,8 @@ func extractSpecialITypeInfo(fields []string, line InputLine, labels map[string]
 		return ret, 0, false
 	}
 
+	ret[1] = v
+
 	//getting literal
 	literal := fields[1][:strings.Index(fields[1], "(")]
 	lv, e := getLiteralValue(literal, labels)
@@ -461,9 +476,38 @@ func extractSpecialITypeInfo(fields []string, line InputLine, labels map[string]
 	return ret, lv, true
 }
 
-func assembleText(lines []InputLine, settings AssemblySettings, labels map[string]uint32) *MemoryImage {
+func extractLUIInfo(fields []string, line InputLine, labels map[string]uint32) (int, uint32, bool) {
+	if len(fields) != 2 {
+		//invalid format
+		assemblyReportError(line, "LUI instructions must have 1 register and one immediate"+
+			" in the form \"lui $1, [value]\"")
+		return 0, 0, false
+	}
+
+	r, ok := getRegFromString(fields[0], line)
+	if !ok {
+		return 0, 0, false
+	}
+
+	v, e := getLiteralValue(fields[1], labels)
+	if e != nil {
+		assemblyReportError(line, e.Error())
+		return 0, 0, false
+	}
+	if (v&0xFFFF0000) != 0xFFFF0000 && (v&0xFFFF0000) != 0x0 {
+		//overflow
+		assemblyReportError(line, "immediate value does not fit into 16 bits")
+		return 0, 0, false
+	}
+
+	return r, v, true
+}
+
+func assembleText(lines []InputLine, settings AssemblySettings, labels map[string]uint32) (*MemoryImage, map[uint32]InputLine) {
 	currentAddr := settings.TextStart
 	ret := new(MemoryImage)
+	ret.startingAddr = settings.TextStart
+	lineRet := make(map[uint32]InputLine)
 
 	for _, l := range lines {
 		noComment := l.Contents
@@ -474,7 +518,7 @@ func assembleText(lines []InputLine, settings AssemblySettings, labels map[strin
 		if strings.Contains(noLabel, ":") {
 			noLabel = noLabel[strings.Index(noLabel, ":")+1:]
 		}
-		noLabel = strings.ToLower(strings.Trim(noLabel, " \t"))
+		noLabel = strings.Trim(noLabel, " \t")
 
 		if noLabel == "" {
 			continue
@@ -486,15 +530,19 @@ func assembleText(lines []InputLine, settings AssemblySettings, labels map[strin
 		rest := strings.Join(spaceFields[1:], "")
 		fields := strings.Split(rest, ",")
 
+		if len(fields) == 0 {
+			assemblyReportError(l, "opcodes must have at least one parameter; saw none")
+		}
+
 		var instruction uint32 = 0
 
-		switch opCode {
+		switch strings.ToLower(opCode) {
 		case "add":
 			regs, _ := extractRTypeInfo(fields, l, 3)
 			instruction = formRInstruction(opADD, regs[1], regs[2], regs[0], 0, fnADD)
 			break
 		case "addi":
-			regs, imm, _ := extractStandardITypeInfo(fields, l, labels)
+			regs, imm, _ := extractStandardITypeInfo(fields, l, labels, 0xFFFF0000)
 			instruction = formIInstruction(opADDI, regs[0], regs[1], imm)
 			break
 		case "addu":
@@ -502,7 +550,7 @@ func assembleText(lines []InputLine, settings AssemblySettings, labels map[strin
 			instruction = formRInstruction(opADDU, regs[1], regs[2], regs[0], 0, fnADDU)
 			break
 		case "addiu":
-			regs, imm, _ := extractStandardITypeInfo(fields, l, labels)
+			regs, imm, _ := extractStandardITypeInfo(fields, l, labels, 0xFFFF0000)
 			instruction = formIInstruction(opADDIU, regs[0], regs[1], imm)
 			break
 		case "and":
@@ -510,16 +558,16 @@ func assembleText(lines []InputLine, settings AssemblySettings, labels map[strin
 			instruction = formRInstruction(opAND, regs[1], regs[2], regs[0], 0, fnAND)
 			break
 		case "andi":
-			regs, imm, _ := extractStandardITypeInfo(fields, l, labels)
+			regs, imm, _ := extractStandardITypeInfo(fields, l, labels, 0xFFFF0000)
 			instruction = formIInstruction(opANDI, regs[0], regs[1], imm)
 			break
 		case "beq":
-			regs, imm, _ := extractStandardITypeInfo(fields, l, labels)
-			instruction = formIInstruction(opBEQ, regs[0], regs[1], imm)
+			regs, imm, _ := extractStandardITypeInfo(fields, l, labels, 0xFFFC0000)
+			instruction = formIInstruction(opBEQ, regs[0], regs[1], imm/4)
 			break
 		case "bne":
-			regs, imm, _ := extractStandardITypeInfo(fields, l, labels)
-			instruction = formIInstruction(opBNE, regs[0], regs[1], imm)
+			regs, imm, _ := extractStandardITypeInfo(fields, l, labels, 0xFFFC0000)
+			instruction = formIInstruction(opBNE, regs[0], regs[1], imm/4)
 			break
 		case "div":
 			regs, _ := extractRTypeInfo(fields, l, 2)
@@ -531,7 +579,7 @@ func assembleText(lines []InputLine, settings AssemblySettings, labels map[strin
 			break
 		case "jr":
 			regs, _ := extractRTypeInfo(fields, l, 1)
-			instruction = formRInstruction(opJR, regs[2], regs[0], regs[1], 0, fnJR)
+			instruction = formRInstruction(opJR, regs[0], regs[2], regs[1], 0, fnJR)
 			break
 		case "mfhi":
 			regs, _ := extractRTypeInfo(fields, l, 1)
@@ -558,7 +606,7 @@ func assembleText(lines []InputLine, settings AssemblySettings, labels map[strin
 			instruction = formRInstruction(opOR, regs[1], regs[2], regs[0], 0, fnOR)
 			break
 		case "ori":
-			regs, imm, _ := extractStandardITypeInfo(fields, l, labels)
+			regs, imm, _ := extractStandardITypeInfo(fields, l, labels, 0xFFFF0000)
 			instruction = formIInstruction(opORI, regs[0], regs[1], imm)
 			break
 		case "slt":
@@ -566,11 +614,11 @@ func assembleText(lines []InputLine, settings AssemblySettings, labels map[strin
 			instruction = formRInstruction(opSLT, regs[1], regs[2], regs[0], 0, fnSLT)
 			break
 		case "slti":
-			regs, imm, _ := extractStandardITypeInfo(fields, l, labels)
+			regs, imm, _ := extractStandardITypeInfo(fields, l, labels, 0xFFFF0000)
 			instruction = formIInstruction(opSLTI, regs[0], regs[1], imm)
 			break
 		case "sltiu":
-			regs, imm, _ := extractStandardITypeInfo(fields, l, labels)
+			regs, imm, _ := extractStandardITypeInfo(fields, l, labels, 0xFFFF0000)
 			instruction = formIInstruction(opSLTIU, regs[0], regs[1], imm)
 			break
 		case "sltu":
@@ -578,7 +626,7 @@ func assembleText(lines []InputLine, settings AssemblySettings, labels map[strin
 			instruction = formRInstruction(opSLTU, regs[1], regs[2], regs[0], 0, fnSLTU)
 			break
 		case "sll":
-			regs, v, _ := extractStandardITypeInfo(fields, l, labels)
+			regs, v, _ := extractStandardITypeInfo(fields, l, labels, 0xFFFF0000)
 			if v > 31 {
 				//invalid shift amount
 				assemblyReportError(l, "cannot shift by more than 31 bits and cannot be a negative number")
@@ -587,7 +635,7 @@ func assembleText(lines []InputLine, settings AssemblySettings, labels map[strin
 			instruction = formRInstruction(opSLL, regs[1], 0, regs[0], int(v), fnSLL)
 			break
 		case "srl":
-			regs, v, _ := extractStandardITypeInfo(fields, l, labels)
+			regs, v, _ := extractStandardITypeInfo(fields, l, labels, 0xFFFF0000)
 			if v > 31 {
 				//invalid shift amount
 				assemblyReportError(l, "cannot shift by more than 31 bits and cannot be a negative number")
@@ -596,7 +644,7 @@ func assembleText(lines []InputLine, settings AssemblySettings, labels map[strin
 			instruction = formRInstruction(opSRL, regs[1], 0, regs[0], int(v), fnSRL)
 			break
 		case "sra":
-			regs, v, _ := extractStandardITypeInfo(fields, l, labels)
+			regs, v, _ := extractStandardITypeInfo(fields, l, labels, 0xFFFF0000)
 			if v > 31 {
 				//invalid shift amount
 				assemblyReportError(l, "cannot shift by more than 31 bits and cannot be a negative number")
@@ -624,21 +672,75 @@ func assembleText(lines []InputLine, settings AssemblySettings, labels map[strin
 			regs, _ := extractRTypeInfo(fields, l, 3)
 			instruction = formRInstruction(opSUBU, regs[1], regs[2], regs[0], 0, fnSUBU)
 			break
+		case "lw":
+			regs, v, _ := extractSpecialITypeInfo(fields, l, labels)
+			instruction = formIInstruction(opLW, regs[0], regs[1], v)
+			break
+		case "lb":
+			regs, v, _ := extractSpecialITypeInfo(fields, l, labels)
+			instruction = formIInstruction(opLB, regs[0], regs[1], v)
+			break
+		case "lbu":
+			regs, v, _ := extractSpecialITypeInfo(fields, l, labels)
+			instruction = formIInstruction(opLBU, regs[0], regs[1], v)
+			break
+		case "sw":
+			regs, v, _ := extractSpecialITypeInfo(fields, l, labels)
+			instruction = formIInstruction(opSW, regs[0], regs[1], v)
+			break
+		case "sb":
+			regs, v, _ := extractSpecialITypeInfo(fields, l, labels)
+			instruction = formIInstruction(opSB, regs[0], regs[1], v)
+			break
+		case "j":
+			v, e := getLiteralValue(fields[0], labels)
+			if e != nil {
+				assemblyReportError(l, e.Error())
+			}
+			instruction = formJInstruction(opJ, v/4)
+			break
+		case "jal":
+			v, e := getLiteralValue(fields[0], labels)
+			if e != nil {
+				assemblyReportError(l, e.Error())
+			}
+			instruction = formJInstruction(opJAL, v/4)
+			break
+		case "swi":
+			v, e := getLiteralValue(fields[0], labels)
+			if e != nil {
+				assemblyReportError(l, e.Error())
+			}
+			instruction = formIInstruction(opSWI, 0, 0, v)
+			break
+		case "lui":
+			reg, v, _ := extractLUIInfo(fields, l, labels)
+			instruction = formIInstruction(opLUI, reg, 0, v)
+			break
+		case "nop":
+			instruction = 0
+		default:
+			assemblyReportError(l, "invalid opcode \""+opCode+"\". Note that this assembler only supports the"+
+				" MIPS core ISA and does not support pseudo-opcodes")
 		}
 
 		insertMemoryValue(currentAddr, instruction, ret)
+		lineRet[currentAddr] = l
+		if opCode == "jal" {
+			//adding NOP after JAL
+			currentAddr += 4
+			insertMemoryValue(currentAddr, 0, ret)
+		}
 
 		currentAddr += 4
 	}
 
-	return ret
+	return ret, lineRet
 }
 
-func assemble(file string, settings AssemblySettings) (*MemoryImage, map[uint32]InputLine) {
-	retMem := new(MemoryImage)
-	retMap := make(map[uint32]InputLine)
-
+func Assemble(file string, settings AssemblySettings) (SystemMemory, map[uint32]InputLine, int) {
 	//input will be newline delimited
+	numErrors = 0
 	lines := strings.Split(file, "\n")
 
 	var textLines []InputLine
@@ -683,5 +785,29 @@ func assemble(file string, settings AssemblySettings) (*MemoryImage, map[uint32]
 
 	dataMem, labels := assembleData(dataLines, settings)
 	labels = extractTextLabels(textLines, settings, labels)
+	textMem, lineRet := assembleText(textLines, settings, labels)
 
+	//checking to ensure the data memory and text memory don't overlap
+	if dataMem.startingAddr < textMem.startingAddr && dataMem.startingAddr+uint32(len(dataMem.memory)) >= textMem.startingAddr {
+		//collision
+		assemblyReportError(InputLine{
+			Contents:   "{overall file}",
+			LineNumber: 0,
+		}, "assembled text and data memory overlaps, change the settings and assemble again")
+		//no need to return now because it will be caught later
+	} else if textMem.startingAddr < dataMem.startingAddr && textMem.startingAddr+uint32(len(textMem.memory)) >= dataMem.startingAddr {
+		//collision
+		assemblyReportError(InputLine{
+			Contents:   "{overall file}",
+			LineNumber: 0,
+		}, "assembled text and data memory overlaps, change the settings and assemble again")
+		//no need to return now because it will be caught later
+	}
+
+	//creating system memory
+	sysMem := make(SystemMemory)
+	sysMem = addToSystemMemory(textMem, sysMem)
+	sysMem = addToSystemMemory(dataMem, sysMem)
+
+	return sysMem, lineRet, numErrors
 }
