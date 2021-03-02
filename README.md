@@ -6,8 +6,9 @@ Statistically, in one vet session it will check *every* possible reference for p
 
 ## Usage
 
-A precompiled executable has been included for convenience for those on Windows 64 bit.
-To compile the source, one must have Golang installed (only required to build the binary, not to use it). Instructions for how to install and build with Go can be found in the section [Compilation](https://github.com/danielcbailey/MIPSEmulator/new/main?readme=1#compilation)
+A precompiled executable has been included for convenience for those on Windows 64 bit and allows you to avoid compiling the program.
+
+To compile the source, one must have Golang installed (only required to build the binary, not to use it). Instructions for how to install and build with Go can be found in the section [Compilation](https://github.com/danielcbailey/MIPSEmulator/tree/main#compilation)
 
 To use the program, open it from a terminal or by opening the executable file. The program is a command-line interface program.
 Then, a wizard will walk through the settings. These settings are:
