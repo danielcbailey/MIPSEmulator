@@ -4,7 +4,15 @@ import (
 	"fmt"
 )
 
-const maxErrors = 5
+/**
+ * Emulator
+ * The emulator is performance-oriented and does not keep track of what it does (compared to MiSaSiM)
+ * The emulator reads machine code and is of the Von-Nuemann model (meaning that instructions and data share the same
+ *   memory space)
+ * Because it reads from the actual memory, programs can dynamically edit the program memory which is something
+ *   MiSaSiM does not support.
+ * To allow for massive lookup tables to have improved performance, the emulator uses caching
+ */
 
 const (
 	eUninitializedMemoryAccess int = iota
@@ -60,6 +68,7 @@ type instance struct {
 type EmulationResult struct {
 	Memory         SystemMemory
 	Registers      [32]uint32
+	RegInit        uint32
 	DI             uint32
 	SWIContext     interface{}
 	BranchAnalysis map[uint32]BranchInfo
@@ -104,11 +113,33 @@ func addToSystemMemory(img *MemoryImage, mem map[uint32]MemoryPage) map[uint32]M
 
 //accepts formatting
 func (inst *instance) reportError(eType int, format string, fArgs ...interface{}) {
-	eStr := fmt.Sprintf("ERROR: pc=0x%X di=%d message=%s", inst.pc, inst.di, fmt.Sprintf(format, fArgs...))
+	eStr := fmt.Sprintf("ERROR: pc=0x%X di=%d message=%s", inst.pc, inst.di+1, fmt.Sprintf(format, fArgs...))
 	inst.errors = append(inst.errors, RuntimeError{
 		EType:   eType,
 		Message: eStr,
 	})
+}
+
+func (m *SystemMemory) memRead(addr uint32) (uint32, bool) {
+	page, ok := (*m)[addr>>12]
+	if !ok {
+		return 0, false
+	}
+
+	if (page.initialized[(addr%4096)/128]>>((addr%4096)/4%32))&0x1 != 0x1 {
+		//not initialized
+		return 0, false
+	}
+
+	return page.memory[addr/4%1024], true
+}
+
+func (r *EmulationResult) regRead(reg int) (uint32, bool) {
+	if (r.RegInit>>reg)&0x1 != 0x1 {
+		return 0, false
+	}
+
+	return r.Registers[reg], true
 }
 
 //access functions
@@ -227,7 +258,7 @@ func (inst *instance) regWrite(reg int, data uint32) {
  * Emulation entry function
  * 	Is multithreading friendly
  */
-func Emulate(startAddr uint32, mem SystemMemory, limit uint32) EmulationResult {
+func Emulate(startAddr uint32, mem SystemMemory, limit uint32, eTol int) EmulationResult {
 	inst := new(instance)
 	inst.memory = mem
 	inst.regs[0] = 0           //reg 0 is an immutable zero.
@@ -244,9 +275,9 @@ func Emulate(startAddr uint32, mem SystemMemory, limit uint32) EmulationResult {
 	//initializing instruction cache
 
 	for true {
-		if inst.pc == 0xFFFFFFFF || len(inst.errors) >= maxErrors || inst.di > limit {
-			if len(inst.errors) >= maxErrors {
-				inst.reportError(eErrorLimitReached, "maximum of %d errors has been exceeded, stopping emulation", maxErrors)
+		if inst.pc == 0xFFFFFFFF || len(inst.errors) >= eTol || inst.di > limit {
+			if len(inst.errors) >= eTol {
+				inst.reportError(eErrorLimitReached, "maximum of %d errors has been exceeded, stopping emulation", eTol)
 			} else if inst.di > limit {
 				inst.reportError(eRuntimeLimitExceeded, "maximum runtime instruction count of %d exceeded", limit)
 			}
@@ -286,6 +317,7 @@ func Emulate(startAddr uint32, mem SystemMemory, limit uint32) EmulationResult {
 		SWIContext:     inst.swiContext,
 		BranchAnalysis: inst.branchInfo,
 		Errors:         inst.errors,
+		RegInit:        inst.regInit,
 	}
 }
 
@@ -441,6 +473,9 @@ func (inst *instance) executeIType(op, x, z int, imm uint32) {
 		a := inst.regAccess(x) + imm
 		v, _ := inst.memAccess(a, false)
 		inst.regWrite(z, v)
+		break
+	case opLUI:
+		inst.regWrite(z, imm<<16)
 		break
 	case opORI:
 		inst.regWrite(z, inst.regAccess(x)|imm)

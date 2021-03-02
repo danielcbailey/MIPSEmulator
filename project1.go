@@ -17,26 +17,46 @@ const (
 	p1Sol270Rot
 )
 
-type project1 struct {
-	reference        uint32
-	candidates       [8]uint32
-	solutionOffset   uint32
-	solutionRotation p1Rot
-	solutionFlipped  bool
-	reportedOffset   uint32
+type Project1 struct {
+	Reference        uint32    `json:"reference"`
+	Candidates       [8]uint32 `json:"candidates"`
+	SolutionOffset   uint32    `json:"solution"`
+	SolutionRotation p1Rot     `json:"solutionRotation"`
+	SolutionFlipped  bool      `json:"solutionFlipped"`
+	ReportedOffset   uint32    `json:"reportedOffset"`
 }
 
-func (p *project1) genSquare() uint32 {
-	return uint32(rand.Intn(65536))
+func (p *Project1) genSquare() uint32 {
+	var t uint32
+	for true {
+		t = uint32(rand.Intn(65536))
+
+		//testing for contiguous color, which is not allowed
+		for i := 0; 8 > i; i++ {
+			t1 := uint32(0x3 << ((i * 2) % 16))
+			t2 := t & t1
+			t3 := uint32(0x3 << ((i*2 + 2) % 16))
+			t4 := (t & t3) >> 2
+			if t2 == t4 {
+				//reject sample
+				break
+			} else if i == 7 {
+				//accept sample
+				return t
+			}
+		}
+	}
+
+	panic("not possible")
 }
 
-func (p *project1) testSolution(square uint32) bool {
+func (p *Project1) testSolution(square uint32) bool {
 	//again, this is purposefully inefficient to not give away too many hints
 	//although, no matter how inefficient, some hints may be obtained by studying the code
 	for i := 0; 4 > i; i++ {
-		square = (square >> 4) | ((square & 0xFFF) << 12)
+		square = (square >> 4) | ((square & 0xF) << 12)
 
-		if square == p.reference {
+		if square == p.Reference {
 			return true
 		}
 	}
@@ -54,9 +74,9 @@ func (p *project1) testSolution(square uint32) bool {
 	}
 
 	for i := 0; 4 > i; i++ {
-		square = (square >> 4) | ((square & 0xFFF) << 12)
+		square = (square >> 4) | ((square & 0xF) << 12)
 
-		if square == p.reference {
+		if square == p.Reference {
 			return true
 		}
 	}
@@ -64,15 +84,15 @@ func (p *project1) testSolution(square uint32) bool {
 	return false
 }
 
-func (p *project1) genSolution() {
-	p.solutionOffset = uint32(4 * rand.Intn(8))
-	p.solutionFlipped = rand.Intn(2) == 0
-	p.solutionRotation = p1Rot(rand.Intn(4))
+func (p *Project1) genSolution() {
+	p.SolutionOffset = uint32(4 * rand.Intn(8))
+	p.SolutionFlipped = rand.Intn(2) == 0
+	p.SolutionRotation = p1Rot(rand.Intn(4))
 
 	//flipping is always first, then rotation
-	sol := p.reference
-	if p.solutionFlipped {
-		//flipping the reference
+	sol := p.Reference
+	if p.SolutionFlipped {
+		//flipping the Reference
 		//purposefully making an inefficient algorithm to not give hints
 		var buf [8]byte
 		for i := range buf {
@@ -85,7 +105,7 @@ func (p *project1) genSolution() {
 		}
 	}
 
-	switch p.solutionRotation {
+	switch p.SolutionRotation {
 	case p1Sol90Rot:
 		sol = (sol >> 4) | ((sol & 0xF) << 12)
 		break
@@ -97,9 +117,9 @@ func (p *project1) genSolution() {
 		break
 	}
 
-	p.candidates[p.solutionOffset/4] = sol
+	p.Candidates[p.SolutionOffset/4] = sol
 
-	if sol == p.reference {
+	if sol == p.Reference {
 		sol += 0 //something to get a breakpoint on
 	}
 }
@@ -108,21 +128,21 @@ func (inst *instance) swi582() {
 	//memory address in register $1
 	rand.Seed(time.Now().UnixNano())
 	if !inst.regInitialized(1) {
-		inst.reportError(eSoftwareInterruptParameter, "register $1 uninitialized for swi 582 call. $1 should hold the reference memory pointer")
+		inst.reportError(eSoftwareInterruptParameter, "register $1 uninitialized for swi 582 call. $1 should hold the Reference memory pointer")
 	}
 
-	p := new(project1)
-	p.reference = p.genSquare()
+	p := new(Project1)
+	p.Reference = p.genSquare()
 	p.genSolution()
-	p.reportedOffset = 0x12345678 //an arbitrary number to compare to if there was even an attempt at solving it
+	p.ReportedOffset = 0x12345678 //an arbitrary number to compare to if there was even an attempt at solving it
 
 	a := inst.regs[1]
-	inst.memWrite(a, p.reference, 0xFFFFFFFF)
-	inst.memWrite(a+4+p.solutionOffset, p.candidates[p.solutionOffset/4], 0xFFFFFFFF)
+	inst.memWrite(a, p.Reference, 0xFFFFFFFF)
+	inst.memWrite(a+4+p.SolutionOffset, p.Candidates[p.SolutionOffset/4], 0xFFFFFFFF)
 
 	//generating dummy squares
 	for i := 0; 8 > i; i++ {
-		if int(p.solutionOffset/4) == i {
+		if int(p.SolutionOffset/4) == i {
 			continue //already generated the solution
 		}
 
@@ -131,7 +151,7 @@ func (inst *instance) swi582() {
 		for true {
 			t := p.genSquare()
 			if !p.testSolution(t) {
-				p.candidates[i] = t
+				p.Candidates[i] = t
 				inst.memWrite(a+uint32(i)*4+4, t, 0xFFFFFFFF)
 				break
 			}
@@ -149,8 +169,8 @@ func (inst *instance) swi582() {
 
 func (inst *instance) swi583() {
 	//getting project info
-	var p *project1
-	p, ok := inst.swiContext.(*project1)
+	var p *Project1
+	p, ok := inst.swiContext.(*Project1)
 	if !ok {
 		inst.reportError(eInvalidSoftwareInterrupt, "cannot use swi 583 with the previous swi call(s)")
 		return
@@ -162,41 +182,41 @@ func (inst *instance) swi583() {
 			"$3 should hold the byte offset of the solution from the first candidate")
 	}
 
-	p.reportedOffset = inst.regAccess(3)
-	if p.reportedOffset > 28 || p.reportedOffset%4 != 0 {
+	p.ReportedOffset = inst.regAccess(3)
+	if p.ReportedOffset > 28 || p.ReportedOffset%4 != 0 {
 		inst.reportError(eSoftwareInterruptParameterValue, "%h is an invalid solution for swi 583. Must be in [0, 28] and word aligned (multiple of four)")
 		return
 	}
 
 	//storing solution
-	inst.regWrite(6, p.solutionOffset)
+	inst.regWrite(6, p.SolutionOffset)
 }
 
 func (v *VetSession) vetP1Interop(result EmulationResult) {
 	v.TotalCount++
 
-	p, ok := result.SWIContext.(*project1)
+	p, ok := result.SWIContext.(*Project1)
 	if !ok {
 		//fatal error, software interrupts not called for the vet case
 		fmt.Println("FATAL: Software interrupt swi 582 not called for the P1 vet, terminating emulation..")
 		os.Exit(1)
 	}
 
-	if p.reportedOffset == 0x12345678 {
+	if p.ReportedOffset == 0x12345678 {
 		//no guess was made
 		result.Errors = append(result.Errors, RuntimeError{
 			EType:   eNoAnswerReported,
 			Message: "No call was made to swi 583 ",
 		})
 	}
-	if p.reportedOffset == p.solutionOffset {
+	if p.ReportedOffset == p.SolutionOffset {
 		//correct
 		v.CorrectCount++
 	}
 
 	//create test case string
 	rotStr := ""
-	switch p.solutionRotation {
+	switch p.SolutionRotation {
 	case p1Sol0Rot:
 		rotStr = "0Rot"
 		break
@@ -211,11 +231,11 @@ func (v *VetSession) vetP1Interop(result EmulationResult) {
 	}
 
 	flipStr := "flipped"
-	if !p.solutionFlipped {
+	if !p.SolutionFlipped {
 		flipStr = "notFlipped"
 	}
 
-	tCase := "P1-" + rotStr + "CW-" + flipStr + "-" + strconv.Itoa(int(p.solutionOffset)) + "offset"
+	tCase := "P1-" + rotStr + "CW-" + flipStr + "-" + strconv.Itoa(int(p.SolutionOffset)) + "offset"
 
 	tcs, ok := v.TestCases[tCase]
 	if ok {
@@ -223,10 +243,11 @@ func (v *VetSession) vetP1Interop(result EmulationResult) {
 		addVetErrors(result.Errors, ef)
 		v.TestCases[tCase].TotalErrors = tcs.TotalErrors + len(result.Errors)
 		v.TestCases[tCase].ErrorsFrequency = ef
-		if p.reportedOffset == p.solutionOffset {
+		if p.ReportedOffset == p.SolutionOffset {
 			v.TestCases[tCase].Successes++
 		} else {
 			v.TestCases[tCase].Fails++
+			v.addVetFailedSnap(result, tCase)
 		}
 	} else {
 		ef := make(map[int]int)
@@ -234,12 +255,13 @@ func (v *VetSession) vetP1Interop(result EmulationResult) {
 		v.TestCases[tCase] = new(VetTestCase)
 		v.TestCases[tCase].ErrorsFrequency = ef
 		v.TestCases[tCase].TotalErrors = len(result.Errors)
-		if p.reportedOffset == p.solutionOffset {
+		if p.ReportedOffset == p.SolutionOffset {
 			v.TestCases[tCase].Successes = 1
 			v.TestCases[tCase].Fails = 0
 		} else {
 			v.TestCases[tCase].Successes = 0
 			v.TestCases[tCase].Fails = 1
+			v.addVetFailedSnap(result, tCase)
 		}
 	}
 }

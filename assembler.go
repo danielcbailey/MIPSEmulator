@@ -7,6 +7,15 @@ import (
 	"unicode"
 )
 
+/**
+ * Assembler
+ * This file contains the entire assembler, minus instruction declarations and forming (instructions.go)
+ * Compared to MiSaSiM, the assembler gives more detailed errors and is strict, meaning that it treats all
+ * warnings as errors (for example, immediate value overflows).
+ *
+ * Also, compared to MiSaSiM, the assembler generates machine code that **should** be to MIPS 1.0 spec
+ */
+
 type MemoryImage struct {
 	startingAddr uint32
 	memory       []uint32
@@ -738,7 +747,7 @@ func assembleText(lines []InputLine, settings AssemblySettings, labels map[strin
 	return ret, lineRet
 }
 
-func Assemble(file string, settings AssemblySettings) (SystemMemory, map[uint32]InputLine, int) {
+func Assemble(file string, settings AssemblySettings) (SystemMemory, map[uint32]InputLine, int, map[string]uint32) {
 	//input will be newline delimited
 	numErrors = 0
 	lines := strings.Split(file, "\n")
@@ -809,5 +818,5 @@ func Assemble(file string, settings AssemblySettings) (SystemMemory, map[uint32]
 	sysMem = addToSystemMemory(textMem, sysMem)
 	sysMem = addToSystemMemory(dataMem, sysMem)
 
-	return sysMem, lineRet, numErrors
+	return sysMem, lineRet, numErrors, labels
 }
