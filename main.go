@@ -19,6 +19,7 @@ import (
 func main() {
 	//wizard instead of arguments for now
 	reader := bufio.NewReader(os.Stdin)
+	validateEula(reader)
 	fmt.Println("Assembly file:")
 	asmFile, _ := reader.ReadString('\n')
 	asmFile = strings.Trim(asmFile, " \n\t\r")

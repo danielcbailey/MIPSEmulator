@@ -42,4 +42,4 @@ Compiling the program
 2. **Important:** Navigate to your Go `src` folder. It is typically located in your user directory under `go`. For example for windows: `C:\users\aUser\go\src`
 3. Create a folder in the `src` directory. It can be named anything. Copy the source code into that directory.
 4. From a terminal, navigate to the directory you just put the source code in.
-5. From that terminal, run `go build -o MIPSVet.exe main.go emulator.go explorer.go softwareInterrupts.go analysis.go project1.go assembler.go instructions.go`
+5. From that terminal, run `go build -o MIPSVet.exe main.go emulator.go explorer.go softwareInterrupts.go analysis.go project1.go assembler.go instructions.go eula.go`
