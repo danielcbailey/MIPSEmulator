@@ -64,7 +64,7 @@ func insertMemoryValue(addr, value uint32, mem *MemoryImage) {
 	mem.memory[(addr-mem.startingAddr)/4] = prev
 }
 
-func getLiteralValue(s string, labels map[string]uint32) (uint32, error) {
+func getLiteralValueFull(s string, labels map[string]uint32, isSignedImm bool) (uint32, error) {
 	//literals in this case can be labels as well
 	s = strings.Trim(s, " \t")
 
@@ -137,8 +137,15 @@ func getLiteralValue(s string, labels map[string]uint32) (uint32, error) {
 		if !ok {
 			return 0, fmt.Errorf("unresolved label \"%s\"", s)
 		}
+		if isSignedImm {
+			return 0, fmt.Errorf("cannot use labels in signed immediate values")
+		}
 		return v, nil
 	}
+}
+
+func getLiteralValue(s string, labels map[string]uint32) (uint32, error) {
+	return getLiteralValueFull(s, labels, false)
 }
 
 func assembleData(lines []InputLine, settings AssemblySettings) (*MemoryImage, map[string]uint32) {
@@ -412,7 +419,7 @@ func extractRTypeInfo(fields []string, line InputLine, num int) ([3]int, bool) {
 	return ret, true
 }
 
-func extractStandardITypeInfo(fields []string, line InputLine, labels map[string]uint32, maxMask uint32) ([2]int, uint32, bool) {
+func extractStandardITypeInfo(fields []string, line InputLine, labels map[string]uint32, maxMask uint32, isSignedImm bool) ([2]int, uint32, bool) {
 	if len(fields) != 3 {
 		//invalid format
 		assemblyReportError(line, "immediate-type instructions must have 2 registers and one immediate"+
@@ -430,7 +437,7 @@ func extractStandardITypeInfo(fields []string, line InputLine, labels map[string
 		ret[i] = v
 	}
 
-	v, e := getLiteralValue(fields[2], labels)
+	v, e := getLiteralValueFull(fields[2], labels, isSignedImm)
 	if e != nil {
 		assemblyReportError(line, e.Error())
 		return ret, 0, false
@@ -551,7 +558,7 @@ func assembleText(lines []InputLine, settings AssemblySettings, labels map[strin
 			instruction = formRInstruction(opADD, regs[1], regs[2], regs[0], 0, fnADD)
 			break
 		case "addi":
-			regs, imm, _ := extractStandardITypeInfo(fields, l, labels, 0xFFFF0000)
+			regs, imm, _ := extractStandardITypeInfo(fields, l, labels, 0xFFFF0000, true)
 			instruction = formIInstruction(opADDI, regs[0], regs[1], imm)
 			break
 		case "addu":
@@ -559,7 +566,7 @@ func assembleText(lines []InputLine, settings AssemblySettings, labels map[strin
 			instruction = formRInstruction(opADDU, regs[1], regs[2], regs[0], 0, fnADDU)
 			break
 		case "addiu":
-			regs, imm, _ := extractStandardITypeInfo(fields, l, labels, 0xFFFF0000)
+			regs, imm, _ := extractStandardITypeInfo(fields, l, labels, 0xFFFF0000, false)
 			instruction = formIInstruction(opADDIU, regs[0], regs[1], imm)
 			break
 		case "and":
@@ -567,15 +574,15 @@ func assembleText(lines []InputLine, settings AssemblySettings, labels map[strin
 			instruction = formRInstruction(opAND, regs[1], regs[2], regs[0], 0, fnAND)
 			break
 		case "andi":
-			regs, imm, _ := extractStandardITypeInfo(fields, l, labels, 0xFFFF0000)
+			regs, imm, _ := extractStandardITypeInfo(fields, l, labels, 0xFFFF0000, false)
 			instruction = formIInstruction(opANDI, regs[0], regs[1], imm)
 			break
 		case "beq":
-			regs, imm, _ := extractStandardITypeInfo(fields, l, labels, 0xFFFC0000)
+			regs, imm, _ := extractStandardITypeInfo(fields, l, labels, 0xFFFC0000, false)
 			instruction = formIInstruction(opBEQ, regs[0], regs[1], imm/4)
 			break
 		case "bne":
-			regs, imm, _ := extractStandardITypeInfo(fields, l, labels, 0xFFFC0000)
+			regs, imm, _ := extractStandardITypeInfo(fields, l, labels, 0xFFFC0000, false)
 			instruction = formIInstruction(opBNE, regs[0], regs[1], imm/4)
 			break
 		case "div":
@@ -615,7 +622,7 @@ func assembleText(lines []InputLine, settings AssemblySettings, labels map[strin
 			instruction = formRInstruction(opOR, regs[1], regs[2], regs[0], 0, fnOR)
 			break
 		case "ori":
-			regs, imm, _ := extractStandardITypeInfo(fields, l, labels, 0xFFFF0000)
+			regs, imm, _ := extractStandardITypeInfo(fields, l, labels, 0xFFFF0000, false)
 			instruction = formIInstruction(opORI, regs[0], regs[1], imm)
 			break
 		case "slt":
@@ -623,11 +630,11 @@ func assembleText(lines []InputLine, settings AssemblySettings, labels map[strin
 			instruction = formRInstruction(opSLT, regs[1], regs[2], regs[0], 0, fnSLT)
 			break
 		case "slti":
-			regs, imm, _ := extractStandardITypeInfo(fields, l, labels, 0xFFFF0000)
+			regs, imm, _ := extractStandardITypeInfo(fields, l, labels, 0xFFFF0000, true)
 			instruction = formIInstruction(opSLTI, regs[0], regs[1], imm)
 			break
 		case "sltiu":
-			regs, imm, _ := extractStandardITypeInfo(fields, l, labels, 0xFFFF0000)
+			regs, imm, _ := extractStandardITypeInfo(fields, l, labels, 0xFFFF0000, false)
 			instruction = formIInstruction(opSLTIU, regs[0], regs[1], imm)
 			break
 		case "sltu":
@@ -635,7 +642,7 @@ func assembleText(lines []InputLine, settings AssemblySettings, labels map[strin
 			instruction = formRInstruction(opSLTU, regs[1], regs[2], regs[0], 0, fnSLTU)
 			break
 		case "sll":
-			regs, v, _ := extractStandardITypeInfo(fields, l, labels, 0xFFFF0000)
+			regs, v, _ := extractStandardITypeInfo(fields, l, labels, 0xFFFF0000, false)
 			if v > 31 {
 				//invalid shift amount
 				assemblyReportError(l, "cannot shift by more than 31 bits and cannot be a negative number")
@@ -644,7 +651,7 @@ func assembleText(lines []InputLine, settings AssemblySettings, labels map[strin
 			instruction = formRInstruction(opSLL, regs[1], 0, regs[0], int(v), fnSLL)
 			break
 		case "srl":
-			regs, v, _ := extractStandardITypeInfo(fields, l, labels, 0xFFFF0000)
+			regs, v, _ := extractStandardITypeInfo(fields, l, labels, 0xFFFF0000, false)
 			if v > 31 {
 				//invalid shift amount
 				assemblyReportError(l, "cannot shift by more than 31 bits and cannot be a negative number")
@@ -653,7 +660,7 @@ func assembleText(lines []InputLine, settings AssemblySettings, labels map[strin
 			instruction = formRInstruction(opSRL, regs[1], 0, regs[0], int(v), fnSRL)
 			break
 		case "sra":
-			regs, v, _ := extractStandardITypeInfo(fields, l, labels, 0xFFFF0000)
+			regs, v, _ := extractStandardITypeInfo(fields, l, labels, 0xFFFF0000, false)
 			if v > 31 {
 				//invalid shift amount
 				assemblyReportError(l, "cannot shift by more than 31 bits and cannot be a negative number")
