@@ -438,6 +438,7 @@ func (inst *instance) executeIType(op, x, z int, imm uint32) {
 		inst.regWrite(z, inst.regAccess(x)+imm)
 		break
 	case opADDIU:
+		imm = uint32(int32(imm<<16) >> 16) //uses arithmetic shifting to copy the sign because it isn't actually unsigned (wtf mips..)
 		inst.regWrite(z, inst.regAccess(x)+imm)
 		break
 	case opANDI:

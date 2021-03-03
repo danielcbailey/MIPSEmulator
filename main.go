@@ -26,6 +26,8 @@ func main() {
 	b, e := ioutil.ReadFile(asmFile)
 	if e != nil {
 		fmt.Println("ERROR: Failed to open assembly file: " + e.Error())
+		fmt.Println("Press enter to exit..")
+		_, _ = reader.ReadByte()
 		return
 	}
 
@@ -68,6 +70,8 @@ func main() {
 	sysMem, lineMeta, numE, labels := Assemble(string(b), settings)
 	if numE != 0 {
 		fmt.Printf("%d error(s) generated from assembler, not attempting emulation.\n", numE)
+		fmt.Println("Press enter to exit..")
+		_, _ = reader.ReadByte()
 		return
 	}
 

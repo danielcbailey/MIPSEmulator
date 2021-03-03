@@ -138,7 +138,7 @@ func getLiteralValueFull(s string, labels map[string]uint32, isSignedImm bool) (
 			return 0, fmt.Errorf("unresolved label \"%s\"", s)
 		}
 		if isSignedImm {
-			return 0, fmt.Errorf("cannot use labels in signed immediate values")
+			return 0, fmt.Errorf("should not use labels in sign-extending immediate values")
 		}
 		return v, nil
 	}
@@ -566,7 +566,7 @@ func assembleText(lines []InputLine, settings AssemblySettings, labels map[strin
 			instruction = formRInstruction(opADDU, regs[1], regs[2], regs[0], 0, fnADDU)
 			break
 		case "addiu":
-			regs, imm, _ := extractStandardITypeInfo(fields, l, labels, 0xFFFF0000, false)
+			regs, imm, _ := extractStandardITypeInfo(fields, l, labels, 0xFFFF0000, true)
 			instruction = formIInstruction(opADDIU, regs[0], regs[1], imm)
 			break
 		case "and":
