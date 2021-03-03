@@ -1,4 +1,4 @@
-# MIPSEmulator / Vetter
+# MIPSEmulator / Vetter for Gatech ECE 2035
 
 ## Perform 100,000 tests on your MIPS assembly and analyze the result and failed cases
 
