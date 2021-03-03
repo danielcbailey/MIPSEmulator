@@ -70,7 +70,7 @@ func (p *Project1) testSolution(square uint32) bool {
 	square = 0
 	for i := 0; 8 > i; i++ {
 		square <<= 2
-		square |= uint32(buf[i])
+		square |= uint32(buf[(i+1)%8])
 	}
 
 	for i := 0; 4 > i; i++ {
