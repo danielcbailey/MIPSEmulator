@@ -69,7 +69,7 @@ func formRInstruction(opCode, rs, rt, rd, shift, funct int) uint32 {
 }
 
 func formIInstruction(opCode, rs, rt int, imm uint32) uint32 {
-	return (uint32(opCode) << 26) | uint32(rs<<21) | uint32(rt<<16) | imm
+	return (uint32(opCode) << 26) | uint32(rs<<21) | uint32(rt<<16) | (imm & 0xFFFF)
 }
 
 func formJInstruction(opCode int, addr uint32) uint32 {

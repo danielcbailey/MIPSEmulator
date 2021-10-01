@@ -27,6 +27,7 @@ const (
 	eInvalidSoftwareInterrupt
 	eSoftwareInterruptParameterValue
 	eNoAnswerReported
+	eDivideByZero
 )
 
 type MemoryPage struct {
@@ -182,6 +183,12 @@ func (inst *instance) memAccess(addr uint32, isInstr bool) (uint32, bool) {
 	if isInstr {
 		//cannot tolerate cache misses
 		inst.iCache = page
+
+		//checking if dCache is invalid
+		if inst.dCache.startAddr == 1 {
+			//it is invalid
+			inst.dCache = page // just something to make it valid until it is assigned something
+		}
 	} else if inst.dMissed == true {
 		//already missed data cache once, needs to flush
 		inst.dCache = page
@@ -271,6 +278,15 @@ func Emulate(startAddr uint32, mem SystemMemory, limit uint32, eTol int) Emulati
 	inst.hiLoFilled = false
 	inst.runtimeLimit = limit
 	inst.di = 0
+	inst.dCache = MemoryPage{
+		startAddr:   1, //some arbitrary value to let the system know that the cache is invalid
+		memory:      nil,
+		initialized: nil,
+	}
+
+	if startAddr == 0 {
+		inst.iCache = inst.memory[0]
+	}
 
 	//initializing instruction cache
 
@@ -333,11 +349,19 @@ func (inst *instance) executeRType(x, y, z, fn int, shift uint32) {
 		inst.regWrite(z, inst.regAccess(x)&inst.regAccess(y))
 		break
 	case fnDIV:
+		if inst.regAccess(y) == 0 {
+			inst.reportError(eDivideByZero, "Cannot divide by zero.")
+			break
+		}
 		inst.lo = uint32(int32(inst.regAccess(x)) / int32(inst.regAccess(y)))
 		inst.hi = uint32(int32(inst.regAccess(x)) % int32(inst.regAccess(y)))
 		inst.hiLoFilled = true
 		break
 	case fnDIVU:
+		if inst.regAccess(y) == 0 {
+			inst.reportError(eDivideByZero, "Cannot divide by zero.")
+			break
+		}
 		inst.lo = inst.regAccess(x) / inst.regAccess(y)
 		inst.hi = inst.regAccess(x) % inst.regAccess(y)
 		inst.hiLoFilled = true
@@ -465,7 +489,7 @@ func (inst *instance) executeIType(op, x, z int, imm uint32) {
 		inst.regWrite(z, v)
 		break
 	case opLBU:
-		a := inst.regAccess(x) + imm
+		a := uint32(int32(inst.regAccess(x)) + int32(int16(uint16(imm))))
 		v, _ := inst.memAccess(a, false)
 		v = v >> ((a % 4) * 8)
 		inst.regWrite(z, v&0xFF)
@@ -563,6 +587,8 @@ func decodeErrorCode(iCode int) string {
 		return "eSoftwareInterruptParameterValue"
 	case eNoAnswerReported:
 		return "eNoAnswerReported"
+	case eDivideByZero:
+		return "eDivideByZero"
 	}
 
 	return "genericError"

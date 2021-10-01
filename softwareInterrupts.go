@@ -8,5 +8,11 @@ func (inst *instance) dispatchSoftwareInterrupt(iCode int) {
 	case 583:
 		inst.swi583()
 		break
+	case 598:
+		inst.swi598()
+		break
+	case 599:
+		inst.swi599()
+		break
 	}
 }

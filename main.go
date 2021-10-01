@@ -54,7 +54,7 @@ func main() {
 		numSamples = 100000
 		switch strings.ToLower(vetReq) {
 		case "p1":
-			vetSession = newVet("Project 1")
+			vetSession = newVet("Project 1 Fall 2021")
 			break
 		default:
 			fmt.Println("unknown assignment to vet, continuing with no vet in 3 seconds")
@@ -64,8 +64,8 @@ func main() {
 	}
 
 	settings := AssemblySettings{
-		TextStart: 0x1000,
-		DataStart: 0x8000,
+		TextStart: 0x0000,
+		DataStart: 0x4000,
 	}
 
 	sysMem, lineMeta, numE, labels := Assemble(string(b), settings)
@@ -124,7 +124,7 @@ func main() {
 		}
 
 		if vetSession != nil {
-			vetSession.vetP1Interop(lastResult)
+			vetSession.vetP1Fa21Interop(lastResult)
 		}
 
 		//updating user every 10%

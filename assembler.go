@@ -138,7 +138,7 @@ func getLiteralValueFull(s string, labels map[string]uint32, isSignedImm bool) (
 			return 0, fmt.Errorf("unresolved label \"%s\"", s)
 		}
 		if isSignedImm {
-			return 0, fmt.Errorf("should not use labels in sign-extending immediate values")
+			//return 0, fmt.Errorf("should not use labels in sign-extending immediate values")
 		}
 		return v, nil
 	}
@@ -345,6 +345,11 @@ func extractTextLabels(lines []InputLine, settings AssemblySettings, labels map[
 
 		if noLabel != "" {
 			currentAddr += 4
+
+			//If the instruction is JAL, then must add an additional 4
+			if strings.Index(strings.ToLower(noLabel), "jal") == 0 {
+				currentAddr += 4
+			}
 		}
 
 	}
@@ -587,11 +592,11 @@ func assembleText(lines []InputLine, settings AssemblySettings, labels map[strin
 			break
 		case "div":
 			regs, _ := extractRTypeInfo(fields, l, 2)
-			instruction = formRInstruction(opDIV, regs[1], regs[2], regs[0], 0, fnDIV)
+			instruction = formRInstruction(opDIV, regs[0], regs[1], regs[0], 0, fnDIV)
 			break
 		case "divu":
 			regs, _ := extractRTypeInfo(fields, l, 2)
-			instruction = formRInstruction(opDIVU, regs[1], regs[2], regs[0], 0, fnDIVU)
+			instruction = formRInstruction(opDIVU, regs[0], regs[1], regs[0], 0, fnDIVU)
 			break
 		case "jr":
 			regs, _ := extractRTypeInfo(fields, l, 1)
@@ -599,19 +604,19 @@ func assembleText(lines []InputLine, settings AssemblySettings, labels map[strin
 			break
 		case "mfhi":
 			regs, _ := extractRTypeInfo(fields, l, 1)
-			instruction = formRInstruction(opMFHI, regs[0], regs[1], regs[2], 0, fnMFHI)
+			instruction = formRInstruction(opMFHI, regs[0], regs[1], regs[0], 0, fnMFHI)
 			break
 		case "mflo":
 			regs, _ := extractRTypeInfo(fields, l, 1)
-			instruction = formRInstruction(opMFLO, regs[0], regs[1], regs[2], 0, fnMFLO)
+			instruction = formRInstruction(opMFLO, regs[0], regs[1], regs[0], 0, fnMFLO)
 			break
 		case "mult":
 			regs, _ := extractRTypeInfo(fields, l, 2)
-			instruction = formRInstruction(opMULT, regs[1], regs[2], regs[0], 0, fnMULT)
+			instruction = formRInstruction(opMULT, regs[0], regs[1], regs[0], 0, fnMULT)
 			break
 		case "multu":
 			regs, _ := extractRTypeInfo(fields, l, 2)
-			instruction = formRInstruction(opMULTU, regs[1], regs[2], regs[0], 0, fnMULTU)
+			instruction = formRInstruction(opMULTU, regs[0], regs[1], regs[0], 0, fnMULTU)
 			break
 		case "xor":
 			regs, _ := extractRTypeInfo(fields, l, 3)

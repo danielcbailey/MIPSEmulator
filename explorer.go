@@ -116,6 +116,8 @@ func startExplorer(latest EmulationResult, vSession *VetSession, labels map[stri
 		} else if fields[0] == "errors" {
 			//errors display command
 			errorsCommand(selection)
+		} else if fields[0] == "saveimage" {
+			genImageP1Fa21(selection)
 		} else if len(fields[0]) > 0 && fields[0][0] == '$' {
 			//register display
 			displayRegisters(selection, input)
@@ -130,7 +132,7 @@ func displayHelp() {
 	fmt.Println("+==== HELP ====+")
 	fmt.Println("search [testcase] [optional: testcase 2]... | Returns list of failed result indices for the given test cases.")
 	fmt.Println(" - These test cases should be from different categories.")
-	fmt.Println(" - Example usage: 'search 0rotCW flipped 20offset'")
+	fmt.Println(" - Example usage: 'search 1hLines ObsNone GeoL'")
 	fmt.Println("cr [result index] | Changes current result to the specified index")
 	fmt.Println(" - Note that index 0 is the last emulation result and is always available.")
 	fmt.Println(" - Example usage: 'cr 2'")
@@ -194,7 +196,7 @@ func searchCommand(snaps []VetSnapshot, fields []string) {
 
 	for i := 1; len(fields) > i; i++ {
 		for j := 0; len(results) > j; j++ {
-			if !strings.Contains(results[j], "-"+fields[i]) {
+			if !strings.Contains(strings.ToLower(results[j]), strings.ToLower("-"+fields[i])) {
 				//removing the result
 				results = append(results[:j], results[j+1:]...)
 				j-- //accounts for the j++ in the loop
