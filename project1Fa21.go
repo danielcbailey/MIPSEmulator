@@ -5,9 +5,11 @@ import (
 	"image"
 	"image/color"
 	"image/png"
+	"io/ioutil"
 	"math/rand"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -681,4 +683,29 @@ func genImageP1Fa21(res *EmulationResult) {
 	}
 
 	fmt.Println("Saved image of test case. Name: testCase.png")
+}
+
+func genFa21Project1Dump(res *EmulationResult) {
+	var context *Project1Fa21
+	context = res.SWIContext.(*Project1Fa21)
+
+	builder := strings.Builder{}
+	for i, v := range context.Pile {
+		builder.WriteString(strconv.Itoa(5356 + 4*i))
+		builder.WriteByte(':')
+		temp := strconv.FormatUint(uint64(v), 10)
+		builder.WriteString(strings.Repeat(" ", 11-len(temp)))
+		builder.WriteString(temp)
+		builder.WriteByte('\n')
+	}
+
+	fName := "pile_" + strconv.Itoa(int(context.Solution>>16)) + "_" +
+		strconv.Itoa(int(context.Solution&0xFFFF)) + "_" + strconv.Itoa(int(context.TargetColor)) + ".txt"
+	e := ioutil.WriteFile(fName, []byte(builder.String()), 0644)
+	if e != nil {
+		fmt.Println("ERROR: Failed to save dump file:", e.Error())
+		return
+	}
+
+	fmt.Println("Saved dump file. Name: " + fName)
 }

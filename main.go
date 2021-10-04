@@ -84,6 +84,7 @@ func main() {
 	dimax := 0
 	avgDI := 0.0
 	var sysMemCopy SystemMemory
+	t := time.Now()
 	for i := 0; numSamples > i; i++ {
 		//creating a copy of the memory
 		sysMemCopy = make(SystemMemory)
@@ -132,6 +133,9 @@ func main() {
 			fmt.Printf("Progress: Completed %d%% (%d emulations)\n", i/(numSamples/100), i)
 		}
 	}
+
+	fmt.Println("Emulation completed in", time.Since(t).Seconds(), "seconds.")
+
 	eSlice := lastResult.Errors
 	if numSamples > 1 {
 		eSlice = nil

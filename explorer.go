@@ -118,6 +118,8 @@ func startExplorer(latest EmulationResult, vSession *VetSession, labels map[stri
 			errorsCommand(selection)
 		} else if fields[0] == "saveimage" {
 			genImageP1Fa21(selection)
+		} else if fields[0] == "dump" {
+			genFa21Project1Dump(selection)
 		} else if len(fields[0]) > 0 && fields[0][0] == '$' {
 			//register display
 			displayRegisters(selection, input)
@@ -152,6 +154,10 @@ func displayHelp() {
 	fmt.Println(" - Example usage: 'errors'")
 	fmt.Println("scenario | displays scenario information for the current snapshot")
 	fmt.Println(" - Example usage: 'scenario'\n")
+	fmt.Println("saveimage | saves the image of the current snapshot's test case")
+	fmt.Println(" - Example usage: 'saveimage'")
+	fmt.Println("dump | generates a dump file of the test case of the current snapshot that can be imported to MiSaSiM")
+	fmt.Println(" - Example usage: 'dump'")
 }
 
 func errorsCommand(snap *EmulationResult) {
@@ -188,18 +194,13 @@ func changeResultCommand(numSnap int, fields []string) int {
 }
 
 func searchCommand(snaps []VetSnapshot, fields []string) {
-	results := make([]string, len(snaps))
-
-	for i, s := range snaps {
-		results[i] = s.TestCase
-	}
+	results := make(map[int]string)
 
 	for i := 1; len(fields) > i; i++ {
-		for j := 0; len(results) > j; j++ {
-			if !strings.Contains(strings.ToLower(results[j]), strings.ToLower("-"+fields[i])) {
-				//removing the result
-				results = append(results[:j], results[j+1:]...)
-				j-- //accounts for the j++ in the loop
+		for j := 0; len(snaps) > j; j++ {
+			if strings.Contains(strings.ToLower(snaps[j].TestCase), strings.ToLower("-"+fields[i])) {
+				//adding the result
+				results[j] = snaps[j].TestCase
 			}
 		}
 	}
