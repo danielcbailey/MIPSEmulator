@@ -2,11 +2,12 @@
 
 ## Perform 100,000 tests on your MIPS assembly and analyze the result and failed cases
 
-Statistically, in one vet session it will check *every* possible reference for project one 15 times.
+If there is any edge case your code doesn't handle, it will be found.
+**Note:** This software is not officially supported by the course and an EULA (End User License Agreement) must be agreed to prior to using the software to release me from liability.
 
 ## Usage
 
-A precompiled executable has been included for convenience for those on Windows 64 bit and allows you to avoid compiling the program.
+A precompiled executable has been included for convenience for those on Windows 64-bit and allows you to avoid compiling the program. Get the release [here](https://github.com/danielcbailey/MIPSEmulator/releases/tag/v1.2).
 
 To compile the source, one must have Golang installed (only required to build the binary, not to use it). Instructions for how to install and build with Go can be found in the section [Compilation](https://github.com/danielcbailey/MIPSEmulator/tree/main#compilation)
 
@@ -42,4 +43,4 @@ Compiling the program
 2. **Important:** Navigate to your Go `src` folder. It is typically located in your user directory under `go`. For example for windows: `C:\users\aUser\go\src`
 3. Create a folder in the `src` directory. It can be named anything. Copy the source code into that directory.
 4. From a terminal, navigate to the directory you just put the source code in.
-5. From that terminal, run `go build -o MIPSVet.exe main.go emulator.go explorer.go softwareInterrupts.go analysis.go project1.go assembler.go instructions.go eula.go`
+5. From that terminal, run `go build -o MIPSVet.exe main.go emulator.go explorer.go softwareInterrupts.go analysis.go project1.go project1Fa21.go assembler.go instructions.go eula.go`
