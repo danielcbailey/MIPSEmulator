@@ -370,7 +370,6 @@ func (p *Project1Fa21) validatePile() bool {
 
 func (inst *instance) swi598() {
 	//memory address in register $1
-	rand.Seed(time.Now().UnixNano())
 	if !inst.regInitialized(1) {
 		inst.reportError(eSoftwareInterruptParameter, "register $1 uninitialized for swi 582 call. $1 should hold the Pile memory pointer")
 	}
@@ -449,7 +448,7 @@ func (v *VetSession) vetP1Fa21Interop(result EmulationResult) {
 	if !ok {
 		//fatal error, software interrupts not called for the vet case
 		fmt.Println("FATAL: Software interrupt swi 598 not called for the P1 vet, terminating emulation..")
-		os.Exit(1)
+		exit()
 	}
 
 	if p.ReportedAnswer == 0x12345678 {

@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"io/ioutil"
+	"math/rand"
 	"os"
 	"strconv"
 	"strings"
@@ -16,9 +17,11 @@ import (
  * much use outside of this context. By contrast, the assembler and emulator are intended to be repurpose-able.
  */
 
+var reader *bufio.Reader
+
 func main() {
 	//wizard instead of arguments for now
-	reader := bufio.NewReader(os.Stdin)
+	reader = bufio.NewReader(os.Stdin)
 	validateEula(reader)
 	fmt.Println("Assembly file:")
 	asmFile, _ := reader.ReadString('\n')
@@ -62,6 +65,8 @@ func main() {
 			numSamples = 1
 		}
 	}
+
+	rand.Seed(time.Now().UnixNano())
 
 	settings := AssemblySettings{
 		TextStart: 0x0000,
@@ -148,4 +153,9 @@ func main() {
 	}
 
 	startExplorer(lastResult, vetSession, labels, lineMeta)
+}
+
+func exit() {
+	fmt.Println("Press enter to exit..")
+	_, _ = reader.ReadByte()
 }
