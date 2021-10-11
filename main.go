@@ -45,6 +45,10 @@ func main() {
 			fmt.Println("Invalid number, defaulting to 5. Error:", e.Error())
 			eTol = 5
 		}
+		if eTol <= 0 {
+			fmt.Println("Errors to tolerate must be greater than 0. Will halt after x number of errors is accumulated.")
+			exit()
+		}
 	}
 
 	fmt.Println("Type the assignment to vet the assembly for. Leave blank for no vetting.")
