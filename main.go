@@ -158,4 +158,5 @@ func main() {
 func exit() {
 	fmt.Println("Press enter to exit..")
 	_, _ = reader.ReadByte()
+	os.Exit(1)
 }
