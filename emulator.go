@@ -512,6 +512,7 @@ func (inst *instance) executeIType(op, x, z int, imm uint32) {
 		inst.memWrite(a, b, 0xFF<<((a%4)*8))
 		break
 	case opSLTI:
+		imm = uint32(int32(imm<<16) >> 16) //uses arithmetic shifting to copy the sign
 		if int32(inst.regAccess(x)) < int32(imm) {
 			inst.regWrite(z, 1)
 		} else {
